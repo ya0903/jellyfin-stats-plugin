@@ -405,7 +405,7 @@
     if (!auth) { alert('Jellyfin Stats: Could not find auth credentials. Try refreshing.'); return; }
 
     const [cfg, me] = await Promise.all([
-      statsApi('/Stats/config', auth).catch(() => ({ pluginTitle: 'Stats', leaderboardVisibleToAll: true })),
+      statsApi('/Stats/config', auth).catch(() => ({ pluginTitle: 'Stats', leaderboardVisibleToAll: false })),
       jellyApi(`/Users/${auth.userId}`, auth).catch(() => ({})),
     ]);
     const isAdmin = !!me.Policy?.IsAdministrator;
