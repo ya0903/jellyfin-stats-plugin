@@ -53,6 +53,7 @@ public class StatsController : ControllerBase
     [Authorize]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
     public ActionResult<UserSummaryDto> GetSummary(Guid userId)
     {
         if (!IsAuthorized(userId)) return Forbid();
@@ -101,6 +102,7 @@ public class StatsController : ControllerBase
     private bool IsAuthorized(Guid targetUserId)
     {
         var requestUserId = GetRequestUserId();
+        if (requestUserId == Guid.Empty) return false; // unauthenticated request
         if (requestUserId == targetUserId) return true;
         var requestUser = _userManager.GetUserById(requestUserId);
         return requestUser?.HasPermission(PermissionKind.IsAdministrator) == true;
@@ -108,9 +110,8 @@ public class StatsController : ControllerBase
 
     private Guid GetRequestUserId()
     {
-        // Jellyfin sets X-Emby-Authorization or Authorization header — user id is in ClaimsPrincipal
-        var claim = User.FindFirst(System.Security.Claims.ClaimTypes.Name)
-                 ?? User.FindFirst("UserId");
+        // Jellyfin writes the authenticated user's ID to the "Jellyfin-UserId" claim.
+        var claim = User.FindFirst("Jellyfin-UserId");
         return claim is not null && Guid.TryParse(claim.Value, out var id) ? id : Guid.Empty;
     }
 
