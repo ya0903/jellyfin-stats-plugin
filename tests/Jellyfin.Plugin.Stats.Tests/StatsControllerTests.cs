@@ -19,4 +19,25 @@ public class StatsControllerTests
         Assert.Equal("Stats", result.PluginTitle);
         Assert.True(result.LeaderboardVisibleToAll);
     }
+
+    [Fact]
+    public void CalculateWatchTimeTicks_UsesPlayedPercentage()
+    {
+        // 1 hour item, 50% played = 30 minutes in ticks
+        long runTimeTicks = 36_000_000_000L; // 1 hour
+        double playedPct = 50.0;
+        long expected = 18_000_000_000L; // 30 minutes
+
+        long result = StatsController.CalculateWatchTimeTicks(runTimeTicks, playedPct);
+
+        Assert.Equal(expected, result);
+    }
+
+    [Fact]
+    public void CalculateWatchTimeTicks_NullPercentageCountsFullItem()
+    {
+        long runTimeTicks = 36_000_000_000L;
+        long result = StatsController.CalculateWatchTimeTicks(runTimeTicks, null);
+        Assert.Equal(runTimeTicks, result);
+    }
 }

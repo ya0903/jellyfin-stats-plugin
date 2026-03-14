@@ -1,3 +1,6 @@
+using System;
+using Jellyfin.Data.Enums;
+using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Library;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
@@ -41,5 +44,75 @@ public class StatsController : ControllerBase
             config?.LeaderboardVisibleToAll ?? true);
     }
 
-    // Remaining endpoints added in Tasks 5-10
+    /// <summary>Calculates actual watched ticks using PlayedPercentage.</summary>
+    public static long CalculateWatchTimeTicks(long runTimeTicks, double? playedPercentage)
+        => (long)(runTimeTicks * (playedPercentage ?? 100.0) / 100.0);
+
+    /// <summary>Returns total watch stats for a user.</summary>
+    [HttpGet("user/{userId}/summary")]
+    [Authorize]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public ActionResult<UserSummaryDto> GetSummary(Guid userId)
+    {
+        if (!IsAuthorized(userId)) return Forbid();
+
+        var user = _userManager.GetUserById(userId);
+        if (user is null) return NotFound();
+
+        var items = _libraryManager.GetItemList(new InternalItemsQuery(user)
+        {
+            IsPlayed = true,
+            Recursive = true,
+            IncludeItemTypes = [BaseItemKind.Movie, BaseItemKind.Episode],
+        });
+
+        long watchTimeTicks = 0;
+        int movies = 0, episodes = 0;
+
+        foreach (var item in items)
+        {
+            var ud = _userDataManager.GetUserDataDto(item, user);
+            watchTimeTicks += CalculateWatchTimeTicks(
+                item.RunTimeTicks ?? 0,
+                ud?.PlayedPercentage);
+
+            if (item is MediaBrowser.Controller.Entities.Movies.Movie) movies++;
+            else episodes++;
+        }
+
+        var series = _libraryManager.GetItemList(new InternalItemsQuery(user)
+        {
+            Recursive = true,
+            IncludeItemTypes = [BaseItemKind.Series],
+        });
+
+        int started = 0, completed = 0;
+        foreach (var s in series)
+        {
+            var ud = _userDataManager.GetUserDataDto(s, user);
+            if ((ud?.PlayedPercentage ?? 0) > 0) started++;
+            if (ud?.Played == true) completed++;
+        }
+
+        return Ok(new UserSummaryDto(movies, episodes, watchTimeTicks, started, completed));
+    }
+
+    private bool IsAuthorized(Guid targetUserId)
+    {
+        var requestUserId = GetRequestUserId();
+        if (requestUserId == targetUserId) return true;
+        var requestUser = _userManager.GetUserById(requestUserId);
+        return requestUser?.HasPermission(PermissionKind.IsAdministrator) == true;
+    }
+
+    private Guid GetRequestUserId()
+    {
+        // Jellyfin sets X-Emby-Authorization or Authorization header — user id is in ClaimsPrincipal
+        var claim = User.FindFirst(System.Security.Claims.ClaimTypes.Name)
+                 ?? User.FindFirst("UserId");
+        return claim is not null && Guid.TryParse(claim.Value, out var id) ? id : Guid.Empty;
+    }
+
+    // Remaining endpoints added in Tasks 6-10
 }
