@@ -1,0 +1,72 @@
+name: Build & Publish
+
+on:
+  push:
+    tags: ['v*.*.*']
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Run tests
+        run: dotnet test tests/Jellyfin.Plugin.Stats.Tests/ --configuration Release
+
+      - name: Build plugin
+        run: |
+          dotnet publish Jellyfin.Plugin.Stats.csproj \
+            --configuration Release \
+            --output dist/
+
+      - name: Zip artifact
+        run: |
+          cd dist
+          zip -j ../jellyfin-stats-plugin.zip Jellyfin.Plugin.Stats.dll
+
+      - name: Compute MD5
+        id: md5
+        run: echo "hash=$(md5sum jellyfin-stats-plugin.zip | cut -d' ' -f1)" >> $GITHUB_OUTPUT
+
+      - name: Update manifest.json
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          REPO="${GITHUB_REPOSITORY}"
+          CHECKSUM="${{ steps.md5.outputs.hash }}"
+          TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          SOURCE_URL="https://github.com/${REPO}/releases/download/${GITHUB_REF_NAME}/jellyfin-stats-plugin.zip"
+          python3 - << EOF
+          import json, sys
+          with open('manifest.json') as f:
+              m = json.load(f)
+          m[0]['versions'].insert(0, {
+              "version": "${VERSION}",
+              "changelog": "See release notes.",
+              "targetAbi": "10.9.0.0",
+              "sourceUrl": "${SOURCE_URL}",
+              "checksum": "${CHECKSUM}",
+              "timestamp": "${TIMESTAMP}"
+          })
+          with open('manifest.json', 'w') as f:
+              json.dump(m, f, indent=2)
+          EOF
+
+      - name: Commit updated manifest
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add manifest.json
+          git commit -m "chore: update manifest for ${GITHUB_REF_NAME}" || true
+          git push origin HEAD:main
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: jellyfin-stats-plugin.zip
+          generate_release_notes: true
