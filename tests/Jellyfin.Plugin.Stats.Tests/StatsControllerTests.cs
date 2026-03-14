@@ -163,4 +163,60 @@ public class StatsControllerTests
         double result = StatsController.ComputeCompletionPercent(watched: 12, total: 10);
         Assert.Equal(100.0, result);
     }
+
+    [Fact]
+    public void CalculateBinge_LongestStreakInOneDay()
+    {
+        var today = DateTime.Today;
+        // 5 episodes on day 1, 3 on day 2
+        var sessions = new List<(DateTime date, double durationHours)>
+        {
+            (today.AddDays(-2), 0.5),
+            (today.AddDays(-2), 0.5),
+            (today.AddDays(-2), 0.5),
+            (today.AddDays(-2), 0.5),
+            (today.AddDays(-2), 0.5),
+            (today.AddDays(-1), 0.5),
+            (today.AddDays(-1), 0.5),
+            (today.AddDays(-1), 0.5),
+        };
+
+        var result = StatsController.CalculateBingeStats(sessions);
+
+        Assert.Equal(5, result.LongestBingeEpisodes);
+    }
+
+    [Fact]
+    public void CalculateBinge_AverageSession_IgnoresZeroDays()
+    {
+        var today = DateTime.Today;
+        var sessions = new List<(DateTime date, double durationHours)>
+        {
+            (today.AddDays(-1), 2.0),
+            (today.AddDays(-1), 1.0), // day 1: 3 hours
+            (today.AddDays(-3), 1.5), // day 2: 1.5 hours
+        };
+
+        var result = StatsController.CalculateBingeStats(sessions);
+        // average of 3.0 and 1.5 = 2.25
+        Assert.Equal(2.25, result.AverageSessionHours);
+    }
+
+    [Fact]
+    public void RankLeaderboard_SortsByHoursDescending()
+    {
+        var raw = new List<(string name, long ticks)>
+        {
+            ("Alice", 36_000_000_000L * 10),  // 10 hrs
+            ("Bob",   36_000_000_000L * 50),  // 50 hrs
+            ("Carol", 36_000_000_000L * 25),  // 25 hrs
+        };
+
+        var ranked = StatsController.RankLeaderboard(raw);
+
+        Assert.Equal("Bob",   ranked[0].UserName);
+        Assert.Equal(50.0,    ranked[0].TotalHours);
+        Assert.Equal("Carol", ranked[1].UserName);
+        Assert.Equal("Alice", ranked[2].UserName);
+    }
 }

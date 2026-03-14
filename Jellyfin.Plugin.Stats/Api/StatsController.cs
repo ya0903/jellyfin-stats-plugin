@@ -341,5 +341,136 @@ public class StatsController : ControllerBase
             .ToList());
     }
 
-    // Remaining endpoints added in Tasks 9-10
+    /// <summary>Calculates binge statistics from a list of (date, durationHours) play events.</summary>
+    public static BingeStatsDto CalculateBingeStats(
+        IEnumerable<(DateTime date, double durationHours)> sessions)
+    {
+        var byDay = sessions
+            .GroupBy(s => s.date.Date)
+            .ToDictionary(g => g.Key, g => (Count: g.Count(), Hours: g.Sum(s => s.durationHours)));
+
+        int longestBinge = byDay.Values.Select(v => v.Count).DefaultIfEmpty(0).Max();
+        double longestSession = byDay.Values.Select(v => v.Hours).DefaultIfEmpty(0).Max();
+        double avgSession = byDay.Count > 0 ? byDay.Values.Average(v => v.Hours) : 0;
+
+        return new BingeStatsDto(
+            longestBinge,
+            Math.Round(longestSession, 1),
+            Math.Round(avgSession, 2));
+    }
+
+    /// <summary>Returns binge statistics for a user.</summary>
+    [HttpGet("user/{userId}/binge")]
+    [Authorize]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public ActionResult<BingeStatsDto> GetBinge(Guid userId)
+    {
+        if (!IsAuthorized(userId)) return Forbid();
+        var user = _userManager.GetUserById(userId);
+        if (user is null) return NotFound();
+
+        var items = _libraryManager.GetItemList(new InternalItemsQuery(user)
+        {
+            IsPlayed = true,
+            Recursive = true,
+            IncludeItemTypes = [BaseItemKind.Movie, BaseItemKind.Episode],
+        });
+
+        var sessions = items
+            .Select(i =>
+            {
+                var ud = _userDataManager.GetUserDataDto(i, user);
+                if (ud?.LastPlayedDate is null) return ((DateTime, double)?)null;
+                double hours = CalculateWatchTimeTicks(
+                    i.RunTimeTicks ?? 0,
+                    ud.PlayedPercentage) / 36_000_000_000.0;
+                return (ud.LastPlayedDate.Value.ToLocalTime(), hours);
+            })
+            .Where(x => x.HasValue)
+            .Select(x => x!.Value)
+            .ToList();
+
+        return Ok(CalculateBingeStats(sessions));
+    }
+
+    /// <summary>Returns top actors or directors by watched title count.</summary>
+    [HttpGet("user/{userId}/people")]
+    [Authorize]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public ActionResult<List<PersonStatsDto>> GetPeople(
+        Guid userId,
+        [FromQuery] string type = "Actor",
+        [FromQuery] int limit = 10)
+    {
+        if (!IsAuthorized(userId)) return Forbid();
+        var user = _userManager.GetUserById(userId);
+        if (user is null) return NotFound();
+
+        var items = _libraryManager.GetItemList(new InternalItemsQuery(user)
+        {
+            IsPlayed = true,
+            Recursive = true,
+            IncludeItemTypes = [BaseItemKind.Movie, BaseItemKind.Episode],
+        });
+
+        Enum.TryParse<Jellyfin.Data.Enums.PersonKind>(type, ignoreCase: true, out var personKind);
+
+        var personMap = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        foreach (var item in items)
+        {
+            var people = _libraryManager.GetPeople(item);
+            foreach (var p in people.Where(p => p.Type == personKind))
+            {
+                personMap[p.Name ?? string.Empty] = personMap.GetValueOrDefault(p.Name ?? string.Empty) + 1;
+            }
+        }
+
+        return Ok(personMap
+            .OrderByDescending(kv => kv.Value)
+            .Take(limit)
+            .Select(kv => new PersonStatsDto(kv.Key, kv.Value))
+            .ToList());
+    }
+
+    /// <summary>Converts raw (name, ticks) pairs into a sorted leaderboard.</summary>
+    public static List<LeaderboardEntryDto> RankLeaderboard(
+        IEnumerable<(string name, long ticks)> entries)
+        => entries
+            .Select(e => new LeaderboardEntryDto(e.name, Math.Round(e.ticks / 36_000_000_000.0, 1)))
+            .OrderByDescending(e => e.TotalHours)
+            .ToList();
+
+    /// <summary>Returns all users ranked by total watch time. Visible to all authenticated users.</summary>
+    [HttpGet("leaderboard")]
+    [Authorize]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    public ActionResult<List<LeaderboardEntryDto>> GetLeaderboard()
+    {
+        var users = _userManager.Users.ToList();
+        var raw = new List<(string name, long ticks)>();
+
+        foreach (var user in users)
+        {
+            var items = _libraryManager.GetItemList(new InternalItemsQuery(user)
+            {
+                IsPlayed = true,
+                Recursive = true,
+                IncludeItemTypes = [BaseItemKind.Movie, BaseItemKind.Episode],
+            });
+
+            long ticks = items.Sum(i =>
+            {
+                var ud = _userDataManager.GetUserDataDto(i, user);
+                return CalculateWatchTimeTicks(i.RunTimeTicks ?? 0, ud?.PlayedPercentage);
+            });
+
+            raw.Add((user.Username, ticks));
+        }
+
+        return Ok(RankLeaderboard(raw));
+    }
 }
