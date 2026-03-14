@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Jellyfin.Plugin.Stats.Api;
 using Xunit;
 
@@ -56,9 +57,9 @@ public class StatsControllerTests
 
         var buckets = StatsController.BucketDates(dates, "month", today, 12);
 
-        Assert.DoesNotContain(buckets, b => b.Label == "Apr" && b.Count > 0);
-        Assert.Contains(buckets, b => b.Label == "Mar" && b.Count == 1);
-        Assert.Contains(buckets, b => b.Label == "Dec" && b.Count == 1);
+        Assert.DoesNotContain(buckets, b => b.Label.StartsWith("Apr") && b.Count > 0);
+        Assert.Contains(buckets, b => b.Label.StartsWith("Mar") && b.Count == 1);
+        Assert.Contains(buckets, b => b.Label.StartsWith("Dec") && b.Count == 1);
     }
 
     [Fact]
@@ -77,5 +78,24 @@ public class StatsControllerTests
         var buckets = StatsController.BucketDates(dates, "year", today, 5);
         Assert.Contains(buckets, b => b.Label == "2026" && b.Count == 1);
         Assert.Contains(buckets, b => b.Label == "2024" && b.Count == 1);
+    }
+
+    [Fact]
+    public void BucketByMonth_NoLabelCollisionAcrossYears()
+    {
+        var today = new DateTime(2026, 3, 14);
+        var dates = new List<DateTime>
+        {
+            new(2025, 3, 10), // Mar 25 — same month name as current year but different year
+            new(2026, 3, 5),  // Mar 26 — current month
+        };
+
+        var buckets = StatsController.BucketDates(dates, "month", today, 24);
+
+        // Both Marches must be counted — total should be 2 across the two Mar buckets
+        int marTotal = buckets.Where(b => b.Label.StartsWith("Mar")).Sum(b => b.Count);
+        Assert.Equal(2, marTotal);
+        // Must have 24 distinct buckets
+        Assert.Equal(24, buckets.Count);
     }
 }

@@ -136,9 +136,9 @@ public class StatsController : ControllerBase
             {
                 "day"   => today.AddDays(-i).ToString("MMM d"),
                 "week"  => $"W{GetIsoWeek(today.AddDays(-i * 7))} '{today.AddDays(-i * 7):yy}",
-                "month" => today.AddMonths(-i).ToString("MMM"),
+                "month" => today.AddMonths(-i).ToString("MMM yy"),
                 "year"  => today.AddYears(-i).ToString("yyyy"),
-                _       => today.AddMonths(-i).ToString("MMM"),
+                _       => today.AddMonths(-i).ToString("MMM yy"),
             };
             buckets.TryAdd(key, 0);
         }
@@ -160,9 +160,9 @@ public class StatsController : ControllerBase
             {
                 "day"   => d.ToString("MMM d"),
                 "week"  => $"W{GetIsoWeek(d)} '{d:yy}",
-                "month" => d.ToString("MMM"),
+                "month" => d.ToString("MMM yy"),
                 "year"  => d.ToString("yyyy"),
-                _       => d.ToString("MMM"),
+                _       => d.ToString("MMM yy"),
             };
 
             if (buckets.ContainsKey(key)) buckets[key]++;
