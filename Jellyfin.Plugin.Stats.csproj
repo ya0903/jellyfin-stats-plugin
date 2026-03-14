@@ -9,7 +9,9 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Jellyfin.Controller" Version="10.9.*" />
-    <PackageReference Include="Microsoft.AspNetCore.Mvc.Core" Version="2.2.*" />
+  </ItemGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
   <ItemGroup>
     <!-- Embed the frontend JS as a resource -->
