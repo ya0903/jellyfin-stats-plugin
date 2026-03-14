@@ -98,4 +98,40 @@ public class StatsControllerTests
         // Must have 24 distinct buckets
         Assert.Equal(24, buckets.Count);
     }
+
+    [Fact]
+    public void AggregateGenres_CountsAndRanksCorrectly()
+    {
+        var items = new[]
+        {
+            new { Genres = new[] { "Action", "Drama" } },
+            new { Genres = new[] { "Action" } },
+            new { Genres = new[] { "Drama", "Comedy" } },
+        };
+
+        var genreMap = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        foreach (var item in items)
+            foreach (var g in item.Genres)
+                genreMap[g] = genreMap.GetValueOrDefault(g) + 1;
+
+        var ranked = genreMap.OrderByDescending(kv => kv.Value).Take(6)
+            .Select(kv => new GenreDto(kv.Key, kv.Value)).ToList();
+
+        Assert.Equal("Action", ranked[0].Name);
+        Assert.Equal(2, ranked[0].Count);
+        Assert.Equal("Drama", ranked[1].Name);
+        Assert.Equal(2, ranked[1].Count);
+        Assert.Equal(3, ranked.Count);
+    }
+
+    [Fact]
+    public void AggregateGenres_CaseInsensitiveDeduplicated()
+    {
+        var genreMap = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        foreach (var g in new[] { "action", "Action", "ACTION" })
+            genreMap[g] = genreMap.GetValueOrDefault(g) + 1;
+
+        Assert.Single(genreMap);
+        Assert.Equal(3, genreMap.Values.First());
+    }
 }

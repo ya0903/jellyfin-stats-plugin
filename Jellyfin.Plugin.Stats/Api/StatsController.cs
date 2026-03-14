@@ -206,5 +206,36 @@ public class StatsController : ControllerBase
         return Ok(BucketDates(playedDates, groupBy, DateTime.Today, count));
     }
 
-    // Remaining endpoints added in Tasks 7-10
+    /// <summary>Returns top genres by watched item count.</summary>
+    [HttpGet("user/{userId}/genres")]
+    [Authorize]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public ActionResult<List<GenreDto>> GetGenres(Guid userId, [FromQuery] int limit = 6)
+    {
+        if (!IsAuthorized(userId)) return Forbid();
+        var user = _userManager.GetUserById(userId);
+        if (user is null) return NotFound();
+
+        var items = _libraryManager.GetItemList(new InternalItemsQuery(user)
+        {
+            IsPlayed = true,
+            Recursive = true,
+            IncludeItemTypes = [BaseItemKind.Movie, BaseItemKind.Episode],
+        });
+
+        var genreMap = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        foreach (var item in items)
+            foreach (var genre in item.Genres ?? [])
+                genreMap[genre] = genreMap.GetValueOrDefault(genre) + 1;
+
+        return Ok(genreMap
+            .OrderByDescending(kv => kv.Value)
+            .Take(limit)
+            .Select(kv => new GenreDto(kv.Key, kv.Value))
+            .ToList());
+    }
+
+    // Remaining endpoints added in Tasks 8-10
 }
