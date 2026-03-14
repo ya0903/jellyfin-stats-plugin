@@ -203,6 +203,15 @@ public class StatsControllerTests
     }
 
     [Fact]
+    public void CalculateBingeStats_EmptyInput_ReturnsZeros()
+    {
+        var result = StatsController.CalculateBingeStats([]);
+        Assert.Equal(0, result.LongestBingeEpisodes);
+        Assert.Equal(0.0, result.LongestSessionHours);
+        Assert.Equal(0.0, result.AverageSessionHours);
+    }
+
+    [Fact]
     public void RankLeaderboard_SortsByHoursDescending()
     {
         var raw = new List<(string name, long ticks)>

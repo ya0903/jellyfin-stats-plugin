@@ -399,6 +399,7 @@ public class StatsController : ControllerBase
     [HttpGet("user/{userId}/people")]
     [Authorize]
     [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public ActionResult<List<PersonStatsDto>> GetPeople(
@@ -417,7 +418,8 @@ public class StatsController : ControllerBase
             IncludeItemTypes = [BaseItemKind.Movie, BaseItemKind.Episode],
         });
 
-        Enum.TryParse<Jellyfin.Data.Enums.PersonKind>(type, ignoreCase: true, out var personKind);
+        if (!Enum.TryParse<Jellyfin.Data.Enums.PersonKind>(type, ignoreCase: true, out var personKind))
+            return BadRequest($"Invalid person type '{type}'. Valid values: {string.Join(", ", Enum.GetNames<Jellyfin.Data.Enums.PersonKind>())}");
 
         var personMap = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         foreach (var item in items)
