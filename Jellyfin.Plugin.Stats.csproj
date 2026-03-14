@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <AssemblyName>Jellyfin.Plugin.Stats</AssemblyName>
+    <RootNamespace>Jellyfin.Plugin.Stats</RootNamespace>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Jellyfin.Controller" Version="10.9.*" />
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Core" Version="2.2.*" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Embed the frontend JS as a resource -->
+    <EmbeddedResource Include="Web\stats.js" />
+    <EmbeddedResource Include="Configuration\configPage.html" />
+  </ItemGroup>
+</Project>
