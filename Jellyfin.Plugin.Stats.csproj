@@ -15,7 +15,11 @@
   </ItemGroup>
   <ItemGroup>
     <!-- Embed the frontend JS as a resource -->
-    <EmbeddedResource Include="Web\stats.js" />
-    <EmbeddedResource Include="Configuration\configPage.html" />
+    <EmbeddedResource Include="Jellyfin.Plugin.Stats\Web\stats.js" />
+    <EmbeddedResource Include="Jellyfin.Plugin.Stats\Configuration\configPage.html" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Exclude test projects from the main project glob -->
+    <Compile Remove="tests\**\*.cs" />
   </ItemGroup>
 </Project>
