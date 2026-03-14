@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using Jellyfin.Data.Enums;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Library;
@@ -115,5 +117,94 @@ public class StatsController : ControllerBase
         return claim is not null && Guid.TryParse(claim.Value, out var id) ? id : Guid.Empty;
     }
 
-    // Remaining endpoints added in Tasks 6-10
+    /// <summary>
+    /// Groups a list of dates into labelled buckets.
+    /// Clamps to [today - range, today] — never produces future buckets.
+    /// </summary>
+    public static List<ActivityBucketDto> BucketDates(
+        IEnumerable<DateTime> dates,
+        string groupBy,
+        DateTime today,
+        int bucketCount)
+    {
+        // Build ordered bucket keys (oldest to newest, all pre-seeded at zero)
+        var buckets = new Dictionary<string, int>(StringComparer.Ordinal);
+
+        for (int i = bucketCount - 1; i >= 0; i--)
+        {
+            string key = groupBy switch
+            {
+                "day"   => today.AddDays(-i).ToString("MMM d"),
+                "week"  => $"W{GetIsoWeek(today.AddDays(-i * 7))} '{today.AddDays(-i * 7):yy}",
+                "month" => today.AddMonths(-i).ToString("MMM"),
+                "year"  => today.AddYears(-i).ToString("yyyy"),
+                _       => today.AddMonths(-i).ToString("MMM"),
+            };
+            buckets.TryAdd(key, 0);
+        }
+
+        var cutoff = groupBy switch
+        {
+            "day"   => today.AddDays(-(bucketCount - 1)).Date,
+            "week"  => today.AddDays(-(bucketCount - 1) * 7).Date,
+            "month" => today.AddMonths(-(bucketCount - 1)).Date,
+            "year"  => today.AddYears(-(bucketCount - 1)).Date,
+            _       => today.AddMonths(-(bucketCount - 1)).Date,
+        };
+
+        foreach (var d in dates)
+        {
+            if (d.Date > today.Date || d.Date < cutoff) continue; // clamp — no future, no out-of-range
+
+            string key = groupBy switch
+            {
+                "day"   => d.ToString("MMM d"),
+                "week"  => $"W{GetIsoWeek(d)} '{d:yy}",
+                "month" => d.ToString("MMM"),
+                "year"  => d.ToString("yyyy"),
+                _       => d.ToString("MMM"),
+            };
+
+            if (buckets.ContainsKey(key)) buckets[key]++;
+        }
+
+        return buckets.Select(kv => new ActivityBucketDto(kv.Key, kv.Value)).ToList();
+    }
+
+    private static int GetIsoWeek(DateTime d)
+        => System.Globalization.ISOWeek.GetWeekOfYear(d);
+
+    /// <summary>Returns watch activity grouped by day/week/month/year.</summary>
+    [HttpGet("user/{userId}/activity")]
+    [Authorize]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public ActionResult<List<ActivityBucketDto>> GetActivity(
+        Guid userId,
+        [FromQuery] string groupBy = "month")
+    {
+        if (!IsAuthorized(userId)) return Forbid();
+        var user = _userManager.GetUserById(userId);
+        if (user is null) return NotFound();
+
+        var items = _libraryManager.GetItemList(new InternalItemsQuery(user)
+        {
+            IsPlayed = true,
+            Recursive = true,
+            IncludeItemTypes = [BaseItemKind.Movie, BaseItemKind.Episode],
+        });
+
+        var playedDates = items
+            .Select(i => _userDataManager.GetUserDataDto(i, user)?.LastPlayedDate)
+            .Where(d => d.HasValue)
+            .Select(d => d!.Value.ToLocalTime())
+            .ToList();
+
+        int count = groupBy switch { "day" => 30, "week" => 52, "year" => 10, _ => 24 };
+
+        return Ok(BucketDates(playedDates, groupBy, DateTime.Today, count));
+    }
+
+    // Remaining endpoints added in Tasks 7-10
 }
