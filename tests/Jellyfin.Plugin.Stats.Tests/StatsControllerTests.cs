@@ -155,4 +155,12 @@ public class StatsControllerTests
         double result = StatsController.ComputeCompletionPercent(watched: 0, total: 0);
         Assert.Equal(0.0, result);
     }
+
+    [Fact]
+    public void ComputeCompletionPercent_WatchedExceedsTotal_ClampsTo100()
+    {
+        // Can happen if episode count shifts between queries
+        double result = StatsController.ComputeCompletionPercent(watched: 12, total: 10);
+        Assert.Equal(100.0, result);
+    }
 }

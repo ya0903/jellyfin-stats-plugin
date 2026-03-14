@@ -239,7 +239,7 @@ public class StatsController : ControllerBase
 
     /// <summary>Computes completion percentage, guarding against zero total.</summary>
     public static double ComputeCompletionPercent(int watched, int total)
-        => total > 0 ? Math.Round(watched * 100.0 / total, 1) : 0.0;
+        => total > 0 ? Math.Min(100.0, Math.Round(watched * 100.0 / total, 1)) : 0.0;
 
     /// <summary>Returns all started series with completion info.</summary>
     [HttpGet("user/{userId}/shows")]
@@ -259,31 +259,46 @@ public class StatsController : ControllerBase
             IncludeItemTypes = [BaseItemKind.Series],
         });
 
+        // Fetch all episodes in two flat queries to avoid N+1 per series
+        var allEpisodes = _libraryManager.GetItemList(new InternalItemsQuery(user)
+        {
+            Recursive = true,
+            IncludeItemTypes = [BaseItemKind.Episode],
+        });
+
+        var playedEpisodes = _libraryManager.GetItemList(new InternalItemsQuery(user)
+        {
+            Recursive = true,
+            IsPlayed = true,
+            IncludeItemTypes = [BaseItemKind.Episode],
+        });
+
+        // Group by series ID in memory (cast to Episode to access SeriesId)
+        var totalBySeriesId = allEpisodes
+            .OfType<MediaBrowser.Controller.Entities.TV.Episode>()
+            .GroupBy(e => e.SeriesId)
+            .ToDictionary(g => g.Key, g => g.Count());
+        var watchedBySeriesId = playedEpisodes
+            .OfType<MediaBrowser.Controller.Entities.TV.Episode>()
+            .GroupBy(e => e.SeriesId)
+            .ToDictionary(g => g.Key, g => g.Count());
+
         var result = new List<ShowStatsDto>();
         foreach (var series in allSeries)
         {
-            var ud = _userDataManager.GetUserDataDto(series, user);
-            if ((ud?.PlayedPercentage ?? 0) <= 0) continue; // not started
+            int watched = watchedBySeriesId.GetValueOrDefault(series.Id);
+            if (watched == 0) continue; // not started
 
-            // Count episodes
-            var allEps = _libraryManager.GetItemList(new InternalItemsQuery(user)
-            {
-                Recursive = true,
-                IncludeItemTypes = [BaseItemKind.Episode],
-                AncestorIds = [series.Id],
-            });
-
-            int total = allEps.Count;
-            int watched = allEps.Count(e =>
-                _userDataManager.GetUserDataDto(e, user)?.Played == true);
-
+            int total = totalBySeriesId.GetValueOrDefault(series.Id);
             double pct = ComputeCompletionPercent(watched, total);
+            bool completed = watched >= total && total > 0;
+
             result.Add(new ShowStatsDto(
                 series.Name ?? string.Empty,
                 watched,
                 total,
                 pct,
-                ud?.Played == true));
+                completed));
         }
 
         return Ok(result.OrderByDescending(s => s.EpisodesWatched).ToList());
@@ -306,6 +321,8 @@ public class StatsController : ControllerBase
             IsPlayed = true,
             Recursive = true,
             IncludeItemTypes = [BaseItemKind.Movie, BaseItemKind.Episode],
+            OrderBy = [(Jellyfin.Data.Enums.ItemSortBy.DatePlayed, Jellyfin.Data.Enums.SortOrder.Descending)],
+            Limit = limit,
         });
 
         return Ok(items
@@ -321,9 +338,6 @@ public class StatsController : ControllerBase
                     seriesName,
                     ud?.LastPlayedDate);
             })
-            .Where(dto => dto.LastPlayedDate.HasValue)
-            .OrderByDescending(dto => dto.LastPlayedDate)
-            .Take(limit)
             .ToList());
     }
 
