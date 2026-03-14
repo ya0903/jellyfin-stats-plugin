@@ -1,1 +1,79 @@
-<!-- placeholder -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <title>Stats — Plugin Configuration</title>
+</head>
+<body>
+<div id="StatsConfigPage" data-role="page" class="page type-interior pluginConfigurationPage"
+     data-require="emby-input,emby-button,emby-checkbox">
+  <div data-role="content">
+    <div class="content-primary">
+      <form id="StatsConfigForm">
+        <div class="verticalSection">
+          <div class="sectionTitleContainer flex align-items-center">
+            <h2 class="sectionTitle">Stats Plugin Configuration</h2>
+          </div>
+
+          <div class="inputContainer">
+            <label class="inputLabel" for="pluginTitle">Dashboard Title</label>
+            <input id="pluginTitle" name="PluginTitle" type="text"
+                   class="emby-input" maxlength="40"
+                   placeholder="Stats" />
+            <div class="fieldDescription">Displayed in the sidebar button and dashboard header.</div>
+          </div>
+
+          <div class="checkboxContainer checkboxContainer-withDescription">
+            <label class="emby-checkbox-label">
+              <input id="leaderboardVisibleToAll" name="LeaderboardVisibleToAll"
+                     type="checkbox" is="emby-checkbox" />
+              <span>Show leaderboard to all users</span>
+            </label>
+            <div class="fieldDescription">
+              If unchecked, the leaderboard is only visible to administrators.
+            </div>
+          </div>
+
+          <div>
+            <button is="emby-button" type="submit" class="raised button-submit block">
+              <span>Save</span>
+            </button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<script type="text/javascript">
+  const StatsConfig = {
+    pluginUniqueId: 'a8cdf5d3-6b1a-4f2e-9c3d-7e8f1a2b3c4d',
+
+    load(page) {
+      ApiClient.getPluginConfiguration(this.pluginUniqueId).then(config => {
+        page.querySelector('#pluginTitle').value = config.PluginTitle || 'Stats';
+        page.querySelector('#leaderboardVisibleToAll').checked =
+          config.LeaderboardVisibleToAll !== false;
+      });
+    },
+
+    save(page) {
+      ApiClient.getPluginConfiguration(this.pluginUniqueId).then(config => {
+        config.PluginTitle = page.querySelector('#pluginTitle').value || 'Stats';
+        config.LeaderboardVisibleToAll =
+          page.querySelector('#leaderboardVisibleToAll').checked;
+        ApiClient.updatePluginConfiguration(this.pluginUniqueId, config).then(() => {
+          Dashboard.processPluginConfigurationUpdateResult();
+        });
+      });
+    },
+  };
+
+  window.addEventListener('load', () => {
+    const page = document.querySelector('#StatsConfigPage');
+    page.addEventListener('pageshow', () => StatsConfig.load(page));
+    document.querySelector('#StatsConfigForm')
+      .addEventListener('submit', e => { e.preventDefault(); StatsConfig.save(page); });
+  });
+</script>
+</body>
+</html>
