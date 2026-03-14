@@ -134,4 +134,25 @@ public class StatsControllerTests
         Assert.Single(genreMap);
         Assert.Equal(3, genreMap.Values.First());
     }
+
+    [Fact]
+    public void ComputeCompletionPercent_FullyWatched_Returns100()
+    {
+        double result = StatsController.ComputeCompletionPercent(watched: 10, total: 10);
+        Assert.Equal(100.0, result);
+    }
+
+    [Fact]
+    public void ComputeCompletionPercent_HalfWatched_Returns50()
+    {
+        double result = StatsController.ComputeCompletionPercent(watched: 5, total: 10);
+        Assert.Equal(50.0, result);
+    }
+
+    [Fact]
+    public void ComputeCompletionPercent_ZeroTotal_ReturnsZero()
+    {
+        double result = StatsController.ComputeCompletionPercent(watched: 0, total: 0);
+        Assert.Equal(0.0, result);
+    }
 }

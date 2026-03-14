@@ -237,5 +237,95 @@ public class StatsController : ControllerBase
             .ToList());
     }
 
-    // Remaining endpoints added in Tasks 8-10
+    /// <summary>Computes completion percentage, guarding against zero total.</summary>
+    public static double ComputeCompletionPercent(int watched, int total)
+        => total > 0 ? Math.Round(watched * 100.0 / total, 1) : 0.0;
+
+    /// <summary>Returns all started series with completion info.</summary>
+    [HttpGet("user/{userId}/shows")]
+    [Authorize]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public ActionResult<List<ShowStatsDto>> GetShows(Guid userId)
+    {
+        if (!IsAuthorized(userId)) return Forbid();
+        var user = _userManager.GetUserById(userId);
+        if (user is null) return NotFound();
+
+        var allSeries = _libraryManager.GetItemList(new InternalItemsQuery(user)
+        {
+            Recursive = true,
+            IncludeItemTypes = [BaseItemKind.Series],
+        });
+
+        var result = new List<ShowStatsDto>();
+        foreach (var series in allSeries)
+        {
+            var ud = _userDataManager.GetUserDataDto(series, user);
+            if ((ud?.PlayedPercentage ?? 0) <= 0) continue; // not started
+
+            // Count episodes
+            var allEps = _libraryManager.GetItemList(new InternalItemsQuery(user)
+            {
+                Recursive = true,
+                IncludeItemTypes = [BaseItemKind.Episode],
+                AncestorIds = [series.Id],
+            });
+
+            int total = allEps.Count;
+            int watched = allEps.Count(e =>
+                _userDataManager.GetUserDataDto(e, user)?.Played == true);
+
+            double pct = ComputeCompletionPercent(watched, total);
+            result.Add(new ShowStatsDto(
+                series.Name ?? string.Empty,
+                watched,
+                total,
+                pct,
+                ud?.Played == true));
+        }
+
+        return Ok(result.OrderByDescending(s => s.EpisodesWatched).ToList());
+    }
+
+    /// <summary>Returns recently played items.</summary>
+    [HttpGet("user/{userId}/recent")]
+    [Authorize]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public ActionResult<List<RecentItemDto>> GetRecent(Guid userId, [FromQuery] int limit = 20)
+    {
+        if (!IsAuthorized(userId)) return Forbid();
+        var user = _userManager.GetUserById(userId);
+        if (user is null) return NotFound();
+
+        var items = _libraryManager.GetItemList(new InternalItemsQuery(user)
+        {
+            IsPlayed = true,
+            Recursive = true,
+            IncludeItemTypes = [BaseItemKind.Movie, BaseItemKind.Episode],
+        });
+
+        return Ok(items
+            .Select(i =>
+            {
+                var ud = _userDataManager.GetUserDataDto(i, user);
+                string type = i is MediaBrowser.Controller.Entities.Movies.Movie ? "Movie" : "Episode";
+                string? seriesName = i is MediaBrowser.Controller.Entities.TV.Episode ep
+                    ? ep.SeriesName : null;
+                return new RecentItemDto(
+                    i.Name ?? string.Empty,
+                    type,
+                    seriesName,
+                    ud?.LastPlayedDate);
+            })
+            .Where(dto => dto.LastPlayedDate.HasValue)
+            .OrderByDescending(dto => dto.LastPlayedDate)
+            .Take(limit)
+            .ToList());
+    }
+
+    // Remaining endpoints added in Tasks 9-10
 }
