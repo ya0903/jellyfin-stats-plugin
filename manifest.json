@@ -11,7 +11,7 @@
         "changelog": "Initial release. Per-user watch statistics dashboard with activity graphs, genre breakdowns, show completion tracking, binge stats, top actors/directors, and a server-wide leaderboard.",
         "targetAbi": "10.9.0.0",
         "sourceUrl": "https://github.com/ya0903/jellyfin-stats-plugin/releases/download/v1.0.0/jellyfin-stats-plugin_1.0.0.0.zip",
-        "checksum": "52101048c819264cd20dae86a0f28438",
+        "checksum": "5443c615d5c666b907020a37a7e41f92",
         "timestamp": "2026-03-15T00:00:00Z"
       }
     ]

@@ -539,9 +539,16 @@
   // ── Sidebar button injection ────────────────────────────────────────────────
   function injectBtn() {
     if (document.getElementById(BTN_ID)) return;
-    const nav = document.querySelector(
-      '.mainDrawer-scrollContainer, .navMenuOption:last-of-type, .sidebarLinks'
-    );
+
+    // Try selectors used across Jellyfin 10.7–10.9 and common themes
+    const nav = document.querySelector([
+      '.mainDrawer-scrollContainer',
+      '.navDrawer .scrollY',
+      '.navMenuOption:last-of-type',
+      '.sidebarLinks',
+      '.navDrawer',
+      '.mainDrawer',
+    ].join(', '));
     if (!nav) return;
 
     const btn = document.createElement('button');
@@ -554,8 +561,9 @@
     nav.appendChild(btn);
   }
 
+  // Retry on a schedule to handle slow sidebar renders and SPA navigation
   const obs = new MutationObserver(injectBtn);
   obs.observe(document.body, { childList: true, subtree: true });
-  setTimeout(injectBtn, 2000);
+  [500, 1500, 3000, 6000].forEach(ms => setTimeout(injectBtn, ms));
 
 })();
