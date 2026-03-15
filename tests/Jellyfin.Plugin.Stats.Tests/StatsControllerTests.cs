@@ -45,6 +45,16 @@ public class StatsControllerTests
     }
 
     [Fact]
+    public void CalculateWatchTimeTicks_ZeroPercentageCountsFullItem()
+    {
+        // Items manually marked as watched have PlayedPercentage = 0.0 with no tracking data.
+        // They should contribute full runtime, not zero.
+        long runTimeTicks = 36_000_000_000L;
+        long result = StatsController.CalculateWatchTimeTicks(runTimeTicks, 0.0);
+        Assert.Equal(runTimeTicks, result);
+    }
+
+    [Fact]
     public void BucketByMonth_NoFutureBuckets()
     {
         var today = new DateTime(2026, 3, 14);
@@ -209,6 +219,99 @@ public class StatsControllerTests
         Assert.Equal(0, result.LongestBingeEpisodes);
         Assert.Equal(0.0, result.LongestSessionHours);
         Assert.Equal(0.0, result.AverageSessionHours);
+    }
+
+    // ── Heatmap ────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void CalculateHeatmap_CountsByHourAndDay()
+    {
+        var dates = new List<DateTime>
+        {
+            new(2026, 3, 13, 21, 0, 0), // Friday  21:00 → index 21 / Fri
+            new(2026, 3, 13, 21, 30, 0),// Friday  21:30 → index 21 / Fri
+            new(2026, 3, 14, 14, 0, 0), // Saturday 14:00 → index 14 / Sat
+        };
+
+        var result = StatsController.CalculateHeatmap(dates);
+
+        Assert.Equal(24, result.HourlyBuckets.Count);
+        Assert.Equal(7,  result.DailyBuckets.Count);
+        Assert.Equal(2, result.HourlyBuckets[21].Count);
+        Assert.Equal(1, result.HourlyBuckets[14].Count);
+        Assert.Equal(2, result.DailyBuckets.First(b => b.Label == "Fri").Count);
+        Assert.Equal(1, result.DailyBuckets.First(b => b.Label == "Sat").Count);
+    }
+
+    [Fact]
+    public void CalculateHeatmap_EmptyInput_ReturnsAllZeros()
+    {
+        var result = StatsController.CalculateHeatmap([]);
+        Assert.Equal(24, result.HourlyBuckets.Count);
+        Assert.Equal(7,  result.DailyBuckets.Count);
+        Assert.All(result.HourlyBuckets, b => Assert.Equal(0, b.Count));
+        Assert.All(result.DailyBuckets,  b => Assert.Equal(0, b.Count));
+    }
+
+    [Fact]
+    public void CalculateHeatmap_HourLabels_Correct()
+    {
+        var result = StatsController.CalculateHeatmap([]);
+        Assert.Equal("12am", result.HourlyBuckets[0].Label);
+        Assert.Equal("1am",  result.HourlyBuckets[1].Label);
+        Assert.Equal("11am", result.HourlyBuckets[11].Label);
+        Assert.Equal("12pm", result.HourlyBuckets[12].Label);
+        Assert.Equal("1pm",  result.HourlyBuckets[13].Label);
+        Assert.Equal("11pm", result.HourlyBuckets[23].Label);
+    }
+
+    [Fact]
+    public void CalculateHeatmap_DayLabels_SundayFirst()
+    {
+        var result = StatsController.CalculateHeatmap([]);
+        Assert.Equal("Sun", result.DailyBuckets[0].Label);
+        Assert.Equal("Sat", result.DailyBuckets[6].Label);
+    }
+
+    // ── Decade bucketing ───────────────────────────────────────────────────────
+
+    [Fact]
+    public void BucketByDecade_GroupsCorrectly()
+    {
+        var years = new[] { 1994, 1995, 1999, 2001, 2010, 2023 };
+        var result = StatsController.BucketByDecade(years);
+
+        Assert.Equal(4, result.Count);
+        Assert.Equal(3, result.First(d => d.Label == "1990s").Count);
+        Assert.Equal(1, result.First(d => d.Label == "2000s").Count);
+        Assert.Equal(1, result.First(d => d.Label == "2010s").Count);
+        Assert.Equal(1, result.First(d => d.Label == "2020s").Count);
+    }
+
+    [Fact]
+    public void BucketByDecade_OrderedChronologically()
+    {
+        var years = new[] { 2010, 1985, 1995 };
+        var result = StatsController.BucketByDecade(years);
+        Assert.Equal("1980s", result[0].Label);
+        Assert.Equal("1990s", result[1].Label);
+        Assert.Equal("2010s", result[2].Label);
+    }
+
+    [Fact]
+    public void BucketByDecade_EmptyInput_ReturnsEmpty()
+    {
+        Assert.Empty(StatsController.BucketByDecade([]));
+    }
+
+    [Fact]
+    public void BucketByDecade_SkipsEmptyDecades()
+    {
+        var years = new[] { 1985, 2023 }; // gap: no 1990s–2010s
+        var result = StatsController.BucketByDecade(years);
+        Assert.Equal(2, result.Count);
+        Assert.DoesNotContain(result, d => d.Label == "1990s");
+        Assert.DoesNotContain(result, d => d.Label == "2000s");
     }
 
     [Fact]

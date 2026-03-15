@@ -46,9 +46,13 @@ public class StatsController : ControllerBase
             config?.LeaderboardVisibleToAll ?? true);
     }
 
-    /// <summary>Calculates actual watched ticks using PlayedPercentage.</summary>
+    /// <summary>
+    /// Calculates actual watched ticks using PlayedPercentage.
+    /// Treats null or zero as 100% — callers always pre-filter to IsPlayed = true,
+    /// so a zero percentage means the item was manually marked watched with no tracking data.
+    /// </summary>
     public static long CalculateWatchTimeTicks(long runTimeTicks, double? playedPercentage)
-        => (long)(runTimeTicks * (playedPercentage ?? 100.0) / 100.0);
+        => (long)(runTimeTicks * (playedPercentage is null or <= 0.0 ? 100.0 : playedPercentage.Value) / 100.0);
 
     /// <summary>Returns total watch stats for a user.</summary>
     [HttpGet("user/{userId}/summary")]
@@ -446,12 +450,120 @@ public class StatsController : ControllerBase
             .OrderByDescending(e => e.TotalHours)
             .ToList();
 
-    /// <summary>Returns all users ranked by total watch time. Visible to all authenticated users.</summary>
+    /// <summary>
+    /// Buckets a sequence of play-end timestamps into 24 hourly and 7 daily slots.
+    /// Uses LastPlayedDate (when playback ended) as the signal — label accordingly in the UI.
+    /// </summary>
+    public static HeatmapDto CalculateHeatmap(IEnumerable<DateTime> dates)
+    {
+        static string HourLabel(int h) => h switch
+        {
+            0  => "12am",
+            12 => "12pm",
+            _  => h < 12 ? $"{h}am" : $"{h - 12}pm",
+        };
+
+        var hourCounts = new int[24];
+        var dayCounts  = new int[7];
+
+        foreach (var d in dates)
+        {
+            hourCounts[d.Hour]++;
+            dayCounts[(int)d.DayOfWeek]++;
+        }
+
+        var hourly = Enumerable.Range(0, 24)
+            .Select(i => new HourlyBucketDto(HourLabel(i), hourCounts[i]))
+            .ToList();
+
+        string[] dayLabels = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+        var daily = Enumerable.Range(0, 7)
+            .Select(i => new DailyBucketDto(dayLabels[i], dayCounts[i]))
+            .ToList();
+
+        return new HeatmapDto(hourly, daily);
+    }
+
+    /// <summary>Returns hour-of-day and day-of-week finish-time distribution for a user.</summary>
+    [HttpGet("user/{userId}/heatmap")]
+    [Authorize]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public ActionResult<HeatmapDto> GetHeatmap(Guid userId)
+    {
+        if (!IsAuthorized(userId)) return Forbid();
+        var user = _userManager.GetUserById(userId);
+        if (user is null) return NotFound();
+
+        var items = _libraryManager.GetItemList(new InternalItemsQuery(user)
+        {
+            IsPlayed = true,
+            Recursive = true,
+            IncludeItemTypes = [BaseItemKind.Movie, BaseItemKind.Episode],
+        });
+
+        var dates = items
+            .Select(i => _userDataManager.GetUserDataDto(i, user)?.LastPlayedDate)
+            .Where(d => d.HasValue)
+            .Select(d => d!.Value.ToLocalTime())
+            .ToList();
+
+        return Ok(CalculateHeatmap(dates));
+    }
+
+    /// <summary>
+    /// Groups a sequence of production years into decade buckets.
+    /// Only decades with at least one title are returned, ordered chronologically.
+    /// </summary>
+    public static List<DecadeBucketDto> BucketByDecade(IEnumerable<int> years)
+        => years
+            .GroupBy(y => y / 10 * 10)
+            .OrderBy(g => g.Key)
+            .Select(g => new DecadeBucketDto($"{g.Key}s", g.Count()))
+            .ToList();
+
+    /// <summary>Returns movies grouped by production decade.</summary>
+    [HttpGet("user/{userId}/decades")]
+    [Authorize]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public ActionResult<List<DecadeBucketDto>> GetDecades(Guid userId)
+    {
+        if (!IsAuthorized(userId)) return Forbid();
+        var user = _userManager.GetUserById(userId);
+        if (user is null) return NotFound();
+
+        var items = _libraryManager.GetItemList(new InternalItemsQuery(user)
+        {
+            IsPlayed = true,
+            Recursive = true,
+            IncludeItemTypes = [BaseItemKind.Movie],
+        });
+
+        var years = items
+            .Where(i => i.ProductionYear.HasValue)
+            .Select(i => i.ProductionYear!.Value)
+            .ToList();
+
+        return Ok(BucketByDecade(years));
+    }
+
+    /// <summary>Returns all users ranked by total watch time.</summary>
     [HttpGet("leaderboard")]
     [Authorize]
     [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public ActionResult<List<LeaderboardEntryDto>> GetLeaderboard()
     {
+        var config = Plugin.Instance?.Configuration;
+        if (config?.LeaderboardVisibleToAll == false)
+        {
+            var requestUser = _userManager.GetUserById(GetRequestUserId());
+            if (requestUser?.HasPermission(PermissionKind.IsAdministrator) != true)
+                return Forbid();
+        }
         var users = _userManager.Users.ToList();
         var raw = new List<(string name, long ticks)>();
 

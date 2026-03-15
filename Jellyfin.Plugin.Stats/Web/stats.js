@@ -23,13 +23,16 @@
     Authorization: `MediaBrowser Client="JellyStats",Device="Browser",DeviceId="jfstats1",Version="1.0",Token="${auth.token}"`,
   });
 
-  async function jellyApi(path, auth) {
-    const r = await fetch(`${auth.serverUrl}${path}`, { headers: HEADERS(auth) });
-    if (!r.ok) throw new Error(`${r.status} ${path.slice(0, 50)}`);
-    return r.json();
+  function escHtml(s) {
+    return String(s ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
   }
 
-  async function statsApi(path, auth) {
+  async function api(path, auth) {
     const r = await fetch(`${auth.serverUrl}${path}`, { headers: HEADERS(auth) });
     if (!r.ok) throw new Error(`${r.status} ${path.slice(0, 50)}`);
     return r.json();
@@ -156,13 +159,13 @@
   function renderServerBanner(el, auth) {
     el.innerHTML = '<div class="jfs-loading">LOADING</div>';
     Promise.all([
-      jellyApi('/System/Info', auth),
-      jellyApi('/Items?Recursive=true&IncludeItemTypes=Movie&Limit=0', auth),
-      jellyApi('/Items?Recursive=true&IncludeItemTypes=Series&Limit=0', auth),
-      jellyApi('/Items?Recursive=true&IncludeItemTypes=Episode&Limit=0', auth),
+      api('/System/Info', auth),
+      api('/Items?Recursive=true&IncludeItemTypes=Movie&Limit=0', auth),
+      api('/Items?Recursive=true&IncludeItemTypes=Series&Limit=0', auth),
+      api('/Items?Recursive=true&IncludeItemTypes=Episode&Limit=0', auth),
     ]).then(([info, movies, shows, eps]) => {
       el.innerHTML = `
-        <div class="jfs-server-card"><div class="jfs-server-card-label">Version</div><div class="jfs-server-card-value" style="font-size:1.1rem">${info.Version}</div></div>
+        <div class="jfs-server-card"><div class="jfs-server-card-label">Version</div><div class="jfs-server-card-value" style="font-size:1.1rem">${escHtml(info.Version)}</div></div>
         <div class="jfs-server-card"><div class="jfs-server-card-label">Movies</div><div class="jfs-server-card-value">${(movies.TotalRecordCount||0).toLocaleString()}<span>films</span></div></div>
         <div class="jfs-server-card"><div class="jfs-server-card-label">TV Shows</div><div class="jfs-server-card-value">${(shows.TotalRecordCount||0).toLocaleString()}<span>series</span></div></div>
         <div class="jfs-server-card"><div class="jfs-server-card-label">Episodes</div><div class="jfs-server-card-value">${(eps.TotalRecordCount||0).toLocaleString()}<span>eps</span></div></div>
@@ -185,7 +188,7 @@
 
   function renderActivityChart(el, auth, userId, groupBy) {
     el.innerHTML = '<div class="jfs-loading">LOADING</div>';
-    statsApi(`/Stats/user/${userId}/activity?groupBy=${groupBy}`, auth).then(buckets => {
+    api(`/Stats/user/${userId}/activity?groupBy=${groupBy}`, auth).then(buckets => {
       const max = Math.max(...buckets.map(b => b.count), 1);
       el.innerHTML = `
         <div class="jfs-chart-controls">
@@ -204,16 +207,16 @@
       el.querySelectorAll('.jfs-chart-btn').forEach(btn => {
         btn.onclick = () => renderActivityChart(el, auth, userId, btn.dataset.group);
       });
-    }).catch(e => { el.innerHTML = `<div class="jfs-empty">Could not load activity: ${e.message}</div>`; });
+    }).catch(e => { el.innerHTML = `<div class="jfs-empty">Could not load activity: ${escHtml(e.message)}</div>`; });
   }
 
   function renderGenres(el, auth, userId) {
-    statsApi(`/Stats/user/${userId}/genres?limit=6`, auth).then(genres => {
+    api(`/Stats/user/${userId}/genres?limit=6`, auth).then(genres => {
       if (!genres.length) { el.innerHTML = '<div class="jfs-empty">No genre data yet</div>'; return; }
       const max = genres[0].count;
       el.innerHTML = genres.map(g => `
         <div class="jfs-genre-row">
-          <div class="jfs-genre-name">${g.name}</div>
+          <div class="jfs-genre-name">${escHtml(g.name)}</div>
           <div class="jfs-genre-bar-wrap"><div class="jfs-genre-bar" style="width:${Math.round(g.count/max*100)}%"></div></div>
           <div class="jfs-genre-count">${g.count}</div>
         </div>`).join('');
@@ -221,25 +224,25 @@
   }
 
   function renderRecent(el, auth, userId) {
-    statsApi(`/Stats/user/${userId}/recent?limit=20`, auth).then(items => {
+    api(`/Stats/user/${userId}/recent?limit=20`, auth).then(items => {
       if (!items.length) { el.innerHTML = '<div class="jfs-empty">Nothing watched yet</div>'; return; }
       el.innerHTML = items.map(i => `
         <div class="jfs-recent-item">
           <div class="jfs-badge">${i.type === 'Movie' ? 'Film' : 'EP'}</div>
-          <div class="jfs-recent-name">${i.seriesName ? i.seriesName + ' — ' : ''}${i.name}</div>
+          <div class="jfs-recent-name">${i.seriesName ? escHtml(i.seriesName) + ' — ' : ''}${escHtml(i.name)}</div>
           <div class="jfs-recent-date">${timeAgo(i.lastPlayedDate)}</div>
         </div>`).join('');
     }).catch(() => { el.innerHTML = '<div class="jfs-empty">No recent data</div>'; });
   }
 
   function renderShows(favEl, completionEl, auth, userId) {
-    statsApi(`/Stats/user/${userId}/shows`, auth).then(shows => {
+    api(`/Stats/user/${userId}/shows`, auth).then(shows => {
       const top = shows.slice(0, 6);
       favEl.innerHTML = top.length
         ? top.map((s, i) => `
           <div class="jfs-show-row">
             <div class="jfs-show-rank">${i+1}</div>
-            <div class="jfs-show-name">${s.name}</div>
+            <div class="jfs-show-name">${escHtml(s.name)}</div>
             <div class="jfs-show-count">${s.episodesWatched} eps</div>
           </div>`).join('')
         : '<div class="jfs-empty">No episode data yet</div>';
@@ -268,7 +271,7 @@
         <div style="margin-top:14px">
           ${topProgress.map(s => `
             <div class="jfs-progress-row">
-              <div class="jfs-progress-meta"><span>${s.name}</span><span class="jfs-progress-pct">${s.completionPercent}%</span></div>
+              <div class="jfs-progress-meta"><span>${escHtml(s.name)}</span><span class="jfs-progress-pct">${s.completionPercent}%</span></div>
               <div class="jfs-progress-bar-wrap"><div class="jfs-progress-bar" style="width:${s.completionPercent}%"></div></div>
             </div>`).join('')}
         </div>`;
@@ -279,7 +282,7 @@
   }
 
   function renderBinge(el, auth, userId) {
-    statsApi(`/Stats/user/${userId}/binge`, auth).then(b => {
+    api(`/Stats/user/${userId}/binge`, auth).then(b => {
       el.innerHTML = `
         <div class="jfs-mini-cards">
           <div class="jfs-mini-card"><div class="jfs-card-label">Longest Binge</div><div class="jfs-mini-val">${b.longestBingeEpisodes}<span>eps</span></div></div>
@@ -291,8 +294,8 @@
 
   function renderPeople(actorEl, directorEl, auth, userId) {
     Promise.all([
-      statsApi(`/Stats/user/${userId}/people?type=Actor&limit=10`, auth),
-      statsApi(`/Stats/user/${userId}/people?type=Director&limit=10`, auth),
+      api(`/Stats/user/${userId}/people?type=Actor&limit=10`, auth),
+      api(`/Stats/user/${userId}/people?type=Director&limit=10`, auth),
     ]).then(([actors, directors]) => {
       const renderList = (items, el) => {
         if (!items.length) { el.innerHTML = '<div class="jfs-empty">No data</div>'; return; }
@@ -300,7 +303,7 @@
         el.innerHTML = items.map((p, i) => `
           <div class="jfs-people-row">
             <div class="jfs-people-rank">${i+1}</div>
-            <div class="jfs-people-name">${p.name}</div>
+            <div class="jfs-people-name">${escHtml(p.name)}</div>
             <div class="jfs-people-bar-wrap"><div class="jfs-people-bar" style="width:${Math.round(p.titleCount/max*100)}%"></div></div>
             <div class="jfs-people-count">${p.titleCount} titles</div>
           </div>`).join('');
@@ -313,15 +316,63 @@
     });
   }
 
+  function renderHeatmap(el, auth, userId) {
+    el.innerHTML = '<div class="jfs-loading">LOADING</div>';
+    api(`/Stats/user/${userId}/heatmap`, auth).then(h => {
+      const hourMax = Math.max(...h.hourlyBuckets.map(b => b.count), 1);
+      const dayMax  = Math.max(...h.dailyBuckets.map(b => b.count), 1);
+
+      // Show labels only at 12am, 6am, 12pm, 6pm to avoid crowding
+      const hourLabel = (lbl, i) => (i % 6 === 0) ? lbl : '';
+
+      el.innerHTML = `
+        <div class="jfs-2col" style="margin-bottom:0">
+          <div>
+            <div class="jfs-section-title" style="font-size:.65rem">Hour of Day <span style="font-size:.6rem;color:rgba(255,255,255,.25);text-transform:none;letter-spacing:0">(when you finish watching)</span></div>
+            <div class="jfs-chart-wrap" style="height:60px">
+              ${h.hourlyBuckets.map((b, i) => `
+                <div class="jfs-chart-col" title="${b.label}: ${b.count}">
+                  <div class="jfs-chart-bar" style="height:${Math.max(Math.round(b.count/hourMax*100),2)}%"></div>
+                  <div class="jfs-chart-lbl">${hourLabel(b.label, i)}</div>
+                </div>`).join('')}
+            </div>
+          </div>
+          <div>
+            <div class="jfs-section-title" style="font-size:.65rem">Day of Week</div>
+            <div class="jfs-chart-wrap" style="height:60px">
+              ${h.dailyBuckets.map(b => `
+                <div class="jfs-chart-col" title="${b.label}: ${b.count}">
+                  <div class="jfs-chart-bar" style="height:${Math.max(Math.round(b.count/dayMax*100),2)}%"></div>
+                  <div class="jfs-chart-lbl">${b.label}</div>
+                </div>`).join('')}
+            </div>
+          </div>
+        </div>`;
+    }).catch(() => { el.innerHTML = '<div class="jfs-empty">No heatmap data</div>'; });
+  }
+
+  function renderDecades(el, auth, userId) {
+    api(`/Stats/user/${userId}/decades`, auth).then(decades => {
+      if (!decades.length) { el.innerHTML = '<div class="jfs-empty">No movie data yet</div>'; return; }
+      const max = Math.max(...decades.map(d => d.count));
+      el.innerHTML = decades.map(d => `
+        <div class="jfs-genre-row">
+          <div class="jfs-genre-name">${escHtml(d.label)}</div>
+          <div class="jfs-genre-bar-wrap"><div class="jfs-genre-bar" style="width:${Math.round(d.count/max*100)}%"></div></div>
+          <div class="jfs-genre-count">${d.count}</div>
+        </div>`).join('');
+    }).catch(() => { el.innerHTML = '<div class="jfs-empty">No decade data</div>'; });
+  }
+
   function renderLeaderboard(el, auth) {
-    statsApi('/Stats/leaderboard', auth).then(entries => {
+    api('/Stats/leaderboard', auth).then(entries => {
       if (!entries.length) { el.innerHTML = '<div class="jfs-empty">No users</div>'; return; }
       const max = entries[0].totalHours || 1;
       const medals = ['gold','silver','bronze'];
       el.innerHTML = entries.map((e, i) => `
         <div class="jfs-leader-row">
           <div class="jfs-leader-rank ${medals[i]||''}">${i+1}</div>
-          <div class="jfs-leader-name">${e.userName}</div>
+          <div class="jfs-leader-name">${escHtml(e.userName)}</div>
           <div class="jfs-leader-bar-wrap"><div class="jfs-leader-bar" style="width:${Math.round(e.totalHours/max*100)}%"></div></div>
           <div class="jfs-leader-hrs">${e.totalHours} hrs</div>
         </div>`).join('');
@@ -332,14 +383,22 @@
   async function loadUserDashboard(auth, userId, container) {
     container.innerHTML = '<div class="jfs-loading">LOADING STATS</div>';
     try {
-      const summary = await statsApi(`/Stats/user/${userId}/summary`, auth);
+      const summary = await api(`/Stats/user/${userId}/summary`, auth);
       container.innerHTML = `
         <div id="jfs-stat-cards" class="jfs-cards"></div>
         <div class="jfs-section" id="jfs-activity-section"></div>
-        <div class="jfs-2col">
+        <div class="jfs-section" id="jfs-heatmap-section">
+          <div class="jfs-section-title">Watch Patterns</div>
+          <div id="jfs-heatmap"></div>
+        </div>
+        <div class="jfs-3col">
           <div class="jfs-section">
             <div class="jfs-section-title">Top Genres</div>
             <div id="jfs-genres"></div>
+          </div>
+          <div class="jfs-section">
+            <div class="jfs-section-title">Movie Decades</div>
+            <div id="jfs-decades"></div>
           </div>
           <div class="jfs-section">
             <div class="jfs-section-title">Recently Watched</div>
@@ -378,7 +437,9 @@
       actSection.innerHTML = '<div class="jfs-section-title">Watch Activity</div><div id="jfs-activity-chart"></div>';
       renderActivityChart(actSection.querySelector('#jfs-activity-chart'), auth, userId, 'month');
 
+      renderHeatmap(container.querySelector('#jfs-heatmap'), auth, userId);
       renderGenres(container.querySelector('#jfs-genres'), auth, userId);
+      renderDecades(container.querySelector('#jfs-decades'), auth, userId);
       renderRecent(container.querySelector('#jfs-recent'), auth, userId);
       renderShows(
         container.querySelector('#jfs-fav-shows'),
@@ -392,7 +453,7 @@
         auth, userId
       );
     } catch (e) {
-      container.innerHTML = `<div class="jfs-loading" style="color:#e50914">Error: ${e.message}</div>`;
+      container.innerHTML = `<div class="jfs-loading" style="color:#e50914">Error: ${escHtml(e.message)}</div>`;
     }
   }
 
@@ -405,8 +466,8 @@
     if (!auth) { alert('Jellyfin Stats: Could not find auth credentials. Try refreshing.'); return; }
 
     const [cfg, me] = await Promise.all([
-      statsApi('/Stats/config', auth).catch(() => ({ pluginTitle: 'Stats', leaderboardVisibleToAll: false })),
-      jellyApi(`/Users/${auth.userId}`, auth).catch(() => ({})),
+      api('/Stats/config', auth).catch(() => ({ pluginTitle: 'Stats', leaderboardVisibleToAll: false })),
+      api(`/Users/${auth.userId}`, auth).catch(() => ({})),
     ]);
     const isAdmin = !!me.Policy?.IsAdministrator;
     const title = cfg.pluginTitle || 'Stats';
@@ -419,7 +480,7 @@
     inner.className = 'jfs-inner';
     inner.innerHTML = `
       <div class="jfs-header">
-        <div class="jfs-title">${title.toUpperCase().replace(/^(\w)/, '<span>$1</span>')}</div>
+        <div class="jfs-title">${escHtml(title).toUpperCase().replace(/^(\w)/, '<span>$1</span>')}</div>
         <button class="jfs-close" id="jfs-close-btn">✕ CLOSE</button>
       </div>
       <div id="jfs-banner" class="jfs-server-banner"></div>
@@ -449,7 +510,7 @@
 
     if (isAdmin) {
       try {
-        const users = await jellyApi('/Users', auth);
+        const users = await api('/Users', auth);
         const tabsDiv = document.createElement('div');
         tabsDiv.className = 'jfs-tabs';
 

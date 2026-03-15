@@ -43,3 +43,15 @@ public record LeaderboardEntryDto(string UserName, double TotalHours);
 
 /// <summary>Plugin config exposed to the frontend.</summary>
 public record PluginConfigDto(string PluginTitle, bool LeaderboardVisibleToAll);
+
+/// <summary>A single hour-of-day bucket (0–23).</summary>
+public record HourlyBucketDto(string Label, int Count);
+
+/// <summary>A single day-of-week bucket (Sun–Sat).</summary>
+public record DailyBucketDto(string Label, int Count);
+
+/// <summary>Heatmap data: when the user finishes watching.</summary>
+public record HeatmapDto(List<HourlyBucketDto> HourlyBuckets, List<DailyBucketDto> DailyBuckets);
+
+/// <summary>A production-decade bucket for movies (e.g. "1990s").</summary>
+public record DecadeBucketDto(string Label, int Count);
